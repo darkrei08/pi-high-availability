@@ -85,6 +85,26 @@ function getTempFilePath(filePath: string): string {
   return join(dirname(filePath), `.${basename(filePath)}.${randomUUID()}.tmp`);
 }
 
+async function syncDirectory(directoryPath: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const directory = await open(directoryPath, "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+function syncDirectorySync(directoryPath: string): void {
+  if (process.platform === "win32") return;
+  const directory = openSync(directoryPath, "r");
+  try {
+    fsyncSync(directory);
+  } finally {
+    closeSync(directory);
+  }
+}
+
 async function writeFileAtomically(filePath: string, raw: string): Promise<void> {
   const tempPath = getTempFilePath(filePath);
   try {
@@ -96,6 +116,7 @@ async function writeFileAtomically(filePath: string, raw: string): Promise<void>
       await handle.close();
     }
     await rename(tempPath, filePath);
+    await syncDirectory(dirname(filePath));
   } catch (error) {
     try { await unlink(tempPath); } catch {}
     throw error;
@@ -113,6 +134,7 @@ function writeFileAtomicallySync(filePath: string, raw: string): void {
       closeSync(fd);
     }
     renameSync(tempPath, filePath);
+    syncDirectorySync(dirname(filePath));
   } catch (error) {
     try { unlinkSync(tempPath); } catch {}
     throw error;
@@ -233,14 +255,10 @@ async function saveConfig(cfg: HaConfig, options: SaveConfigOptions = {}): Promi
   await withFileLock(CONFIG_PATH, async (raw) => {
     // Merge credentials from disk so we don't clobber another instance's additions,
     // but allow targeted replace flows (rename/delete/clear) to persist.
-    try {
-      const disk = JSON.parse(raw) as HaConfig;
-      config!.credentials = mergeCredentialProvidersFromDisk(config!.credentials, disk.credentials, {
-        replaceProviders: options.replaceCredentialProviders,
-      });
-    } catch {
-      // Disk parse failed — write our config as-is
-    }
+    const disk = JSON.parse(raw) as HaConfig;
+    config!.credentials = mergeCredentialProvidersFromDisk(config!.credentials, disk.credentials, {
+      replaceProviders: options.replaceCredentialProviders,
+    });
     return { raw: JSON.stringify(config, null, 2), result: undefined };
   });
 }

@@ -62,4 +62,18 @@ describe("file persistence", () => {
     }))).rejects.toBe(writeError);
     expect(readFileSync(filePath, "utf-8")).toBe("{\"existing\":true}");
   });
+
+  it("does not replace the file when the update cannot parse its content", async () => {
+    const { withFileLock } = await import("../extensions/index.ts");
+    const dir = mkdtempSync(join(tmpdir(), "pi-ha-"));
+    const filePath = join(dir, "ha.json");
+    const existing = "{\"existing\":true}";
+    writeFileSync(filePath, existing, "utf-8");
+
+    await expect(withFileLock(filePath, async (raw) => {
+      JSON.parse(`${raw},`);
+      return { raw: "{\"replacement\":true}", result: undefined };
+    })).rejects.toThrow(SyntaxError);
+    expect(readFileSync(filePath, "utf-8")).toBe(existing);
+  });
 });
