@@ -419,7 +419,9 @@ export default function (pi: ExtensionAPI) {
       config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
       try { chmodSync(CONFIG_PATH, 0o600); } catch {}
       normalizeCredentialProviders(config?.credentials);
-      if (config?.defaultGroup) state.activeGroup = config.defaultGroup;
+      const envGroup = process.env.PI_HA_GROUP;
+      if (envGroup && config?.groups?.[envGroup]) state.activeGroup = envGroup;
+      else if (config?.defaultGroup) state.activeGroup = config.defaultGroup;
 
       let startupAuth: AuthJson = {};
       try { startupAuth = JSON.parse(readFileSync(AUTH_PATH, "utf-8")) as AuthJson; } catch {}
@@ -462,7 +464,7 @@ export default function (pi: ExtensionAPI) {
       const entry = entries[i];
       if (entry.type === "custom" && entry.customType === "ha-state" && entry.data) {
         const data = (entry as CustomEntry<HaStateData>).data as HaStateData;
-        if (data.activeGroup) state.activeGroup = data.activeGroup;
+        if (data.activeGroup && !process.env.PI_HA_GROUP) state.activeGroup = data.activeGroup;
         if (data.exhausted) {
           state.exhausted.clear();
           for (const [k, v] of Object.entries(data.exhausted)) {
@@ -477,6 +479,13 @@ export default function (pi: ExtensionAPI) {
         }
         break; // Use the most recent entry only
       }
+    }
+    const envGroup = process.env.PI_HA_GROUP;
+    if (envGroup && !config?.groups?.[envGroup]) {
+      ctx.ui.notify(
+        `[HA] Group '${envGroup}' not found. Using default group '${config?.defaultGroup ?? "none"}'.`,
+        "warning",
+      );
     }
     // Sync the dedup cache so the first persistState() after restore
     // doesn't append a duplicate when state hasn't actually changed.
