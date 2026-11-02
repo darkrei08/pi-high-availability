@@ -37,20 +37,22 @@ function createPi() {
 
 async function loadSession(group: string | undefined) {
   vi.resetModules();
-  if (group === undefined) delete process.env.PI_HA_GROUP;
-  else process.env.PI_HA_GROUP = group;
   mocks.readFileSync.mockImplementation((path: string) =>
     path.endsWith("ha.json") ? JSON.stringify(config) : "{}",
   );
   const mod = await import("../extensions/index.ts");
   const { pi, handlers } = createPi();
   mod.default(pi as any);
+  if (group === undefined) delete process.env.PI_HA_GROUP;
+  else process.env.PI_HA_GROUP = group;
   const ui = { notify: vi.fn(), setStatus: vi.fn() };
-  await handlers.get("session_start")?.({}, {
+  const ctx = {
     sessionManager: { getEntries: () => [] },
     ui,
     model: undefined,
-  });
+  };
+  await handlers.get("session_start")?.({}, ctx);
+  await handlers.get("turn_start")?.({}, ctx);
   return ui;
 }
 
@@ -72,14 +74,14 @@ describe("extensions/index.ts", () => {
   it("uses a valid PI_HA_GROUP for the session", async () => {
     const ui = await loadSession("review");
 
-    expect(ui.setStatus).toHaveBeenCalledWith("ha", "HA: review (?)");
+    expect(ui.setStatus).toHaveBeenLastCalledWith("ha", "HA: review (?)");
     expect(ui.notify).not.toHaveBeenCalled();
   });
 
   it("falls back and notifies when PI_HA_GROUP is unknown", async () => {
     const ui = await loadSession("missing");
 
-    expect(ui.setStatus).toHaveBeenCalledWith("ha", "HA: default (?)");
+    expect(ui.setStatus).toHaveBeenLastCalledWith("ha", "HA: default (?)");
     expect(ui.notify).toHaveBeenCalledWith(
       "[HA] Group 'missing' not found. Using default group 'default'.",
       "warning",
@@ -89,7 +91,7 @@ describe("extensions/index.ts", () => {
   it("keeps the default group when PI_HA_GROUP is absent", async () => {
     const ui = await loadSession(undefined);
 
-    expect(ui.setStatus).toHaveBeenCalledWith("ha", "HA: default (?)");
+    expect(ui.setStatus).toHaveBeenLastCalledWith("ha", "HA: default (?)");
     expect(ui.notify).not.toHaveBeenCalled();
   });
 });
